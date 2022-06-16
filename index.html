@@ -2,15 +2,23 @@
 <html>
     <head>
         <title>Recorder</title>
+        <meta name="viewport" content="width=device-width">
+        <meta name="viewport" content="initial-scale=1.0">
+<style type="text/css">
+input[type=button] {
+  font-size: 24px;
+}
+</style>
     </head>
 
     <body>
         <input type="button" value="Record" id="btn-record">
         <input type="button" value="Play" id="btn-play">
+        <div id="error"></div>
 
         <script type="module">
           import init from './recorder.js';
-          init(document.querySelector('#btn-record'), document.querySelector('#btn-play'));
+          init(document.querySelector('#btn-record'), document.querySelector('#btn-play'), document.querySelector('#error'));
         </script>
     </body>
 

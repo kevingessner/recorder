@@ -16,3 +16,15 @@ No persistence yet; Play button is a noop.
 - https://github.com/mdn/voice-change-o-matic/blob/gh-pages/scripts/app.js
 - https://github.com/samdutton/simpl/blob/gh-pages/mediarecorder/audio-only/js/main.js
     - has play and download features, data URLs
+
+## 2022-06-16
+
+Has persistence now to IndexedDB.
+
+Working on iOS 12 on iPhone 6 now. Requires MediaRecorder to be enabled in Safari > Advanced > Experimental settings.
+And needed some small tweaks for missing APIs.
+
+`python simple-https-server.py` serves the local directory on HTTPS with a self-signed cert `server.pem`,
+generated with `openssl req -new -x509 -keyout server.pem -out server.pem -days 365 -nodes`.
+
+- https://github.com/eligrey/Blob.js

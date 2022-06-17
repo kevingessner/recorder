@@ -1,11 +1,13 @@
-import { get as getFromStorage, set as setToStorage } from 'https://cdn.jsdelivr.net/npm/idb-keyval@6/+esm';
+import { get as getFromStorage, set as setToStorage, getMany as getManyFromStorage } from 'https://cdn.jsdelivr.net/npm/idb-keyval@6/+esm';
 
-export default function init(elBtnRecord, elBtnPlay, elErrorOutput) {
-  const StorageKey = 'recorder.recording';
+export default function init(elBtnRecord, elBtnPlay, elBtnPreview, elErrorOutput) {
+  const StorageRecordingKey = 'recorder.recording';
+  const StorageListenedKey = 'recorder.listened';
 
   const state = {
     hasRecording: false,
     isRecording: false,
+    hasNewRecording: false,
   };
   Object.seal(state);
   function _disableButton(elBtn, flag) {
@@ -19,7 +21,9 @@ export default function init(elBtnRecord, elBtnPlay, elErrorOutput) {
   }
   function updateUIFromState() {
     _disableButton(elBtnPlay, !state.hasRecording || state.isRecording);
+    _disableButton(elBtnPreview, !state.hasRecording || state.isRecording);
     _disableButton(elBtnRecord, state.isRecording);
+    elBtnPlay.classList.toggle("new-recording", state.hasNewRecording);
   }
 
   function logError(err) {
@@ -55,11 +59,25 @@ export default function init(elBtnRecord, elBtnPlay, elErrorOutput) {
     });
   }
 
+  function markListened() {
+    setToStorage(StorageListenedKey, true);
+    state.hasNewRecording = false;
+    updateUIFromState();
+  }
+
+  async function playAndMarkListened() {
+    await playFromStorage();
+    markListened();
+  }
+
   async function playFromStorage() {
+    // Can't play on a new page load on iOS 12 without requesting audio access first
+    // (even though this should just be for the mic).
+    await navigator.mediaDevices.getUserMedia({ audio: true });
     // Support old iOS
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     const audioCtx = new AudioContext();
-    const blob = await getFromStorage(StorageKey);
+    const blob = await getFromStorage(StorageRecordingKey);
     // This would be simpler in a more modern browser:
     //
     // const buffer = await blob.arrayBuffer();
@@ -80,24 +98,25 @@ export default function init(elBtnRecord, elBtnPlay, elErrorOutput) {
   }
 
   async function saveRecordingData(blob) {
-    setToStorage(StorageKey, blob);
+    setToStorage(StorageRecordingKey, blob);
+    setToStorage(StorageListenedKey, false);
     state.hasRecording = true;
+    state.hasNewRecording = true;
     updateUIFromState();
     await playFromStorage();
   }
 
   function recordStream(stream) {
     const recorder = new MediaRecorder(stream);
+    // 'start' event doesn't work in iOS 12 afaict, but 'stop' and 'dataavailable' do
     recorder.addEventListener('dataavailable', handleErrors((event) => saveRecordingData(event.data)));
-    recorder.addEventListener('start', handleErrors(() => {
-      state.isRecording = true;
-      updateUIFromState();
-    }));
     recorder.addEventListener('stop', handleErrors(() => {
       state.isRecording = false;
       updateUIFromState();
     }));
     setTimeout(() => recorder.stop(), 2000);
+    state.isRecording = true;
+    updateUIFromState();
     recorder.start();
   }
 
@@ -108,12 +127,14 @@ export default function init(elBtnRecord, elBtnPlay, elErrorOutput) {
   }
 
   elBtnRecord.addEventListener('click', handleErrors((event) => startRecording()));
-  elBtnPlay.addEventListener('click', handleErrors((event) => playFromStorage()));
+  elBtnPlay.addEventListener('click', handleErrors((event) => playAndMarkListened()));
+  elBtnPreview.addEventListener('click', handleErrors((event) => playFromStorage()));
 
-  getFromStorage(StorageKey)
-    .then((blob) => {
+  getManyFromStorage([StorageRecordingKey, StorageListenedKey])
+    .then(([blob, listened]) => {
       state.hasRecording = blob != null;
+      state.hasNewRecording = blob != null && !listened;
       updateUIFromState();
     })
-    .catch(logError)
+    .catch(logError);
 }

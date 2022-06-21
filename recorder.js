@@ -1,76 +1,93 @@
 import { get as getFromStorage, set as setToStorage, getMany as getManyFromStorage } from 'https://cdn.jsdelivr.net/npm/idb-keyval@6/+esm';
 
-export default function init(elBtnRecord, elBtnPlay, elBtnPreview, elErrorOutput) {
-  const StorageRecordingKey = 'recorder.recording';
-  const StorageListenedKey = 'recorder.listened';
+const StorageRecordingKey = 'recorder.recording';
+const StorageListenedKey = 'recorder.listened';
 
-  const state = {
-    hasRecording: false,
-    isRecording: false,
-    hasNewRecording: false,
-  };
-  Object.seal(state);
-  function _disableButton(elBtn, flag) {
-    elBtn.ariaDisabled = flag;
-    elBtn.disabled = flag;
-    if (flag) {
-      elBtn.setAttribute("disabled", "disabled");
-    } else {
-      elBtn.removeAttribute("disabled");
-    }
-  }
-  function updateUIFromState() {
-    _disableButton(elBtnPlay, !state.hasRecording || state.isRecording);
-    _disableButton(elBtnPreview, !state.hasRecording || state.isRecording);
-    _disableButton(elBtnRecord, state.isRecording);
-    elBtnPlay.classList.toggle("new-recording", state.hasNewRecording);
-  }
+export const Events = {
+  Error: 'error',
+  Update: 'update',
+};
+Object.freeze(Events);
 
-  function logError(err) {
-    console.log(err);
-    elErrorOutput.innerHTML = err + "<br>" + JSON.stringify(err);
-  }
+function promisify(obj) {
+  return new Promise(function(resolve, reject) {
+    obj.onload =
+      obj.onerror = function(evt) {
+        obj.onload =
+          obj.onerror = null
 
-  function handleErrors(fn) {
-    return function withErrorHandling() {
-      try {
-        const res = fn(...arguments);
-        if (res && res.catch) {
-          res.catch(logError);
-        }
-        return res;
-      } catch (e) {
-        logError(e);
+        evt.type === 'load'
+          ? resolve(obj.result || obj)
+          : reject(new Error('Failed to read the blob/file'))
       }
-    };
+  });
+}
+
+export class Recorder extends EventTarget {
+  #recorder = null;
+
+  constructor() {
+    super();
+    this.#dispatchUpdate();
   }
 
-  function promisify(obj) {
-    return new Promise(function(resolve, reject) {
-      obj.onload =
-        obj.onerror = function(evt) {
-          obj.onload =
-            obj.onerror = null
-
-          evt.type === 'load'
-            ? resolve(obj.result || obj)
-            : reject(new Error('Failed to read the blob/file'))
-        }
-    });
+  #dispatchError(e) {
+    this.dispatchEvent(new ErrorEvent(Events.Error, {message: e, error: e}));
   }
 
-  function markListened() {
+  #dispatchUpdate() {
+    getManyFromStorage([StorageRecordingKey, StorageListenedKey])
+      .then(([blob, listened]) => {
+        this.dispatchEvent(new MessageEvent(Events.Update, {
+          data: {
+            hasRecording: blob != null,
+            hasNewRecording: blob != null && !listened,
+            isRecording: this.#recorder != null,
+          },
+        }));
+      })
+      .catch(this.#dispatchError.bind(this));
+  }
+
+  #markListened() {
     setToStorage(StorageListenedKey, true);
-    state.hasNewRecording = false;
-    updateUIFromState();
+    this.#dispatchUpdate();
   }
 
-  async function playAndMarkListened() {
-    await playFromStorage();
-    markListened();
+  async #saveRecordingData(blob) {
+    setToStorage(StorageRecordingKey, blob);
+    setToStorage(StorageListenedKey, false);
+    await this.play();
+    this.#dispatchUpdate();
   }
 
-  async function playFromStorage() {
+  #recordStream(stream) {
+    this.#recorder = new MediaRecorder(stream);
+    // 'start' event doesn't work in iOS 12 afaict, but 'stop' and 'dataavailable' do
+    this.#recorder.addEventListener('dataavailable', (event) => this.#saveRecordingData(event.data).catch(this.#dispatchError.bind(this)));
+    setTimeout(() => this.stopRecording(), 2000);
+    this.#dispatchUpdate();
+    this.#recorder.start();
+  }
+
+  startRecording() {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => this.#recordStream(stream))
+      .catch(this.#dispatchError.bind(this));
+  }
+
+  stopRecording() {
+    this.#recorder.stop();
+    this.#recorder = null;
+    this.#dispatchUpdate();
+  }
+
+  async playAndMarkListened() {
+    await this.play();
+    this.#markListened();
+  }
+
+  async play() {
     // Can't play on a new page load on iOS 12 without requesting audio access first
     // (even though this should just be for the mic).
     await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -96,45 +113,4 @@ export default function init(elBtnRecord, elBtnPlay, elBtnPreview, elErrorOutput
       source.start();
     });
   }
-
-  async function saveRecordingData(blob) {
-    setToStorage(StorageRecordingKey, blob);
-    setToStorage(StorageListenedKey, false);
-    state.hasRecording = true;
-    state.hasNewRecording = true;
-    updateUIFromState();
-    await playFromStorage();
-  }
-
-  function recordStream(stream) {
-    const recorder = new MediaRecorder(stream);
-    // 'start' event doesn't work in iOS 12 afaict, but 'stop' and 'dataavailable' do
-    recorder.addEventListener('dataavailable', handleErrors((event) => saveRecordingData(event.data)));
-    recorder.addEventListener('stop', handleErrors(() => {
-      state.isRecording = false;
-      updateUIFromState();
-    }));
-    setTimeout(() => recorder.stop(), 2000);
-    state.isRecording = true;
-    updateUIFromState();
-    recorder.start();
-  }
-
-  function startRecording() {
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => recordStream(stream))
-      .catch(logError);
-  }
-
-  elBtnRecord.addEventListener('click', handleErrors((event) => startRecording()));
-  elBtnPlay.addEventListener('click', handleErrors((event) => playAndMarkListened()));
-  elBtnPreview.addEventListener('click', handleErrors((event) => playFromStorage()));
-
-  getManyFromStorage([StorageRecordingKey, StorageListenedKey])
-    .then(([blob, listened]) => {
-      state.hasRecording = blob != null;
-      state.hasNewRecording = blob != null && !listened;
-      updateUIFromState();
-    })
-    .catch(logError);
 }

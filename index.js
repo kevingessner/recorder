@@ -12,24 +12,25 @@ function disableButton(elBtn, flag) {
 
 import { Recorder, Events as recorderEvents } from './recorder.js';
 export default async function init(elBtnRecord, elBtnPlay, elBtnPreview, elErrorOutput) {
-  createHoldButton(document.querySelector('#btn-record'));
   const recorder = new Recorder;
 
-  recorder.addEventListener(recorderEvents.Update, (evt) => {
+  recorder.onupdate = (evt) => {
     disableButton(elBtnPlay, !evt.data.hasRecording || evt.data.isRecording);
     disableButton(elBtnPreview, !evt.data.hasRecording || evt.data.isRecording);
-    disableButton(elBtnRecord, evt.data.isRecording);
     elBtnPlay.classList.toggle("new-recording", evt.data.hasNewRecording);
-  });
-  recorder.addEventListener(recorderEvents.Error, (evt) => {
+    elBtnPlay.value = evt.data.isRecording ? "Recording..." : "Play";
+  };
+  recorder.onerror = (evt) => {
     const err = evt.error;
-    console.log(err);
     elErrorOutput.innerHTML = err + "<br>" + JSON.stringify(err);
-  });
+    if (console && console.log) throw err;
+  };
 
   elBtnPlay.addEventListener('click', () => recorder.playAndMarkListened());
   elBtnPreview.addEventListener('click', () => recorder.play());
-  elBtnRecord.addEventListener('click', () => recorder.startRecording());
+  createHoldButton(elBtnRecord,document.querySelector('#hold-to-record'),
+    () => recorder.startRecording(),
+    () => recorder.stopRecording());
 }
 
 

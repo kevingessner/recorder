@@ -23,68 +23,72 @@ function promisify(obj) {
   });
 }
 
-export class Recorder extends EventTarget {
-  #recorder = null;
+export class Recorder {
 
   constructor() {
-    super();
-    this.#dispatchUpdate();
+    Object.assign(this, EventTarget.prototype);
+    this._recorder = null;
+    this.onerror = (evt) => {};
+    this.onupdate = (evt) => {};
+    this._dispatchUpdate();
+    navigator.mediaDevices.getUserMedia({ audio: true });
   }
 
-  #dispatchError(e) {
-    this.dispatchEvent(new ErrorEvent(Events.Error, {message: e, error: e}));
+  _dispatchError(e) {
+    this.onerror(new ErrorEvent(Events.Error, {message: e, error: e}));
   }
 
-  #dispatchUpdate() {
+  _dispatchUpdate() {
     getManyFromStorage([StorageRecordingKey, StorageListenedKey])
       .then(([blob, listened]) => {
-        this.dispatchEvent(new MessageEvent(Events.Update, {
+        this.onupdate(new MessageEvent(Events.Update, {
           data: {
             hasRecording: blob != null,
             hasNewRecording: blob != null && !listened,
-            isRecording: this.#recorder != null,
+            isRecording: this._recorder != null,
           },
         }));
       })
-      .catch(this.#dispatchError.bind(this));
+      .catch(this._dispatchError.bind(this));
   }
 
-  #markListened() {
+  _markListened() {
     setToStorage(StorageListenedKey, true);
-    this.#dispatchUpdate();
+    this._dispatchUpdate();
   }
 
-  async #saveRecordingData(blob) {
+  async _saveRecordingData(blob) {
     setToStorage(StorageRecordingKey, blob);
     setToStorage(StorageListenedKey, false);
     await this.play();
-    this.#dispatchUpdate();
+    this._dispatchUpdate();
   }
 
-  #recordStream(stream) {
-    this.#recorder = new MediaRecorder(stream);
+  _recordStream(stream) {
+    this._recorder = new MediaRecorder(stream);
     // 'start' event doesn't work in iOS 12 afaict, but 'stop' and 'dataavailable' do
-    this.#recorder.addEventListener('dataavailable', (event) => this.#saveRecordingData(event.data).catch(this.#dispatchError.bind(this)));
-    setTimeout(() => this.stopRecording(), 2000);
-    this.#dispatchUpdate();
-    this.#recorder.start();
+    this._recorder.addEventListener('dataavailable', (event) => this._saveRecordingData(event.data).catch(this._dispatchError.bind(this)));
+    this._dispatchUpdate();
+    this._recorder.start();
   }
 
   startRecording() {
     navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => this.#recordStream(stream))
-      .catch(this.#dispatchError.bind(this));
+      .then((stream) => this._recordStream(stream))
+      .catch(this._dispatchError.bind(this));
   }
 
   stopRecording() {
-    this.#recorder.stop();
-    this.#recorder = null;
-    this.#dispatchUpdate();
+    if (this._recorder) {
+      this._recorder.stop();
+      this._recorder = null;
+    }
+    this._dispatchUpdate();
   }
 
   async playAndMarkListened() {
     await this.play();
-    this.#markListened();
+    this._markListened();
   }
 
   async play() {

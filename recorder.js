@@ -26,6 +26,7 @@ function promisify(obj) {
 export class Recorder {
 
   constructor() {
+    // Can't inherit from EventTarget in iOS 12.
     Object.assign(this, EventTarget.prototype);
     this._recorder = null;
     this.onerror = (evt) => {};
@@ -95,26 +96,33 @@ export class Recorder {
     // Can't play on a new page load on iOS 12 without requesting audio access first
     // (even though this should just be for the mic).
     await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Support old iOS
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = new AudioContext();
     const blob = await getFromStorage(StorageRecordingKey);
     // This would be simpler in a more modern browser:
     //
     // const buffer = await blob.arrayBuffer();
-    // const decoded = await audioCtx.decodeAudioData(buffer);
+    // const decoded = await this._audioCtx.decodeAudioData(buffer);
     // ... use decoded ...
     //
     // But the old iOS 12 I'm targetting doesn't have either of those.
     const fr = new FileReader();
     fr.readAsArrayBuffer(blob);
     const buffer = await promisify(fr);
-    audioCtx.decodeAudioData(buffer, function decodeAudioDataHandler(decoded) {
-      // Play back the recording immediately.
-      const source = audioCtx.createBufferSource();
-      source.buffer = decoded;
-      source.connect(audioCtx.destination);
-      source.start();
-    });
+
+    // Support old iOS prefixed name
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    // NB: there is a limit on the number of AudioContexts on a page, so reuse the same one.
+    this._audioCtx = this._audioCtx || new AudioContext();
+
+    this._audioCtx.decodeAudioData(buffer, (function decodeAudioDataHandler(decoded) {
+      try {
+        // Play back the recording immediately.
+        const source = this._audioCtx.createBufferSource();
+        source.buffer = decoded;
+        source.connect(this._audioCtx.destination);
+        source.start();
+      } catch (e) {
+        this._dispatchError(e);
+      }
+    }).bind(this));
   }
 }

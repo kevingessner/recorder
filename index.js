@@ -22,7 +22,7 @@ export default async function init(elBtnRecord, elBtnPlay, elBtnPreview, elError
   };
   recorder.onerror = (evt) => {
     const err = evt.error;
-    elErrorOutput.innerHTML = err + "<br>" + JSON.stringify(err);
+    elErrorOutput.innerHTML = err + "<br>" + err.stack;
     if (console && console.log) throw err;
   };
 

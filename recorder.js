@@ -39,14 +39,14 @@ export class Recorder {
     this.onerror(new ErrorEvent(Events.Error, {message: e, error: e}));
   }
 
-  _dispatchUpdate() {
-    getManyFromStorage([StorageRecordingKey, StorageListenedKey])
+  async _dispatchUpdate() {
+    await getManyFromStorage([StorageRecordingKey, StorageListenedKey])
       .then(([blob, listened]) => {
         this.onupdate(new MessageEvent(Events.Update, {
           data: {
             hasRecording: blob != null,
             hasNewRecording: blob != null && !listened,
-            isRecording: this._recorder != null,
+            isRecording: this._recorder != null || this._startingRecording,
           },
         }));
       })
@@ -67,13 +67,17 @@ export class Recorder {
 
   _recordStream(stream) {
     this._recorder = new MediaRecorder(stream);
+    this._startingRecording = false;
+    this._dispatchUpdate();
     // 'start' event doesn't work in iOS 12 afaict, but 'stop' and 'dataavailable' do
     this._recorder.addEventListener('dataavailable', (event) => this._saveRecordingData(event.data).catch(this._dispatchError.bind(this)));
-    this._dispatchUpdate();
     this._recorder.start();
   }
 
   startRecording() {
+    // Flag to make sure the UI says 'recording' while initializing the recorder
+    this._startingRecording = true;
+    this._dispatchUpdate();
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => this._recordStream(stream))
       .catch(this._dispatchError.bind(this));

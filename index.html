@@ -2,8 +2,7 @@
 <html>
     <head>
         <title>Recorder</title>
-        <meta name="viewport" content="width=device-width">
-        <meta name="viewport" content="initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0">
         <meta name="apple-mobile-web-app-capable" content="yes">
 <style type="text/css">
 body {
@@ -12,8 +11,12 @@ body {
   font-size: 24px;
   color: white;
   text-align: center;
-  -webkit-touch-callout: none;
   font-family: sans-serif;
+  touch-action: none;
+  /* prevent text highlight when holding a button */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 input[type=button] {
